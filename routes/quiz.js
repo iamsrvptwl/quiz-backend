@@ -189,4 +189,111 @@ router.post("/report-question", async (req, res) => {
   } catch (err) { res.status(500).send(err.message); }
 });
 
+app.get("/api/test-analytics/:testId", async (req, res) => {
+  const { testId } = req.params;
+
+  try {
+    // 1. Get the specific test the user clicked on
+    const targetTest = await db.query(`SELECT * FROM results WHERE id = $1`, [testId]);
+    if (targetTest.rows.length === 0) return res.status(404).send("Test not found");
+    const test = targetTest.rows[0];
+
+    // 2. Fetch all peers who took the EXACT SAME test configuration
+    // (Same subject, chapter, exam track, and test type)
+    let peerQuery = `SELECT r.*, u.name as user_name FROM results r JOIN users u ON r.user_id = u.id WHERE r.subject_id = $1`;
+    let queryParams = [test.subject_id];
+    let paramCount = 2;
+
+    if (test.chapter_id) { peerQuery += ` AND r.chapter_id = $${paramCount++}`; queryParams.push(test.chapter_id); }
+    if (test.exam_name) { peerQuery += ` AND r.exam_name = $${paramCount++}`; queryParams.push(test.exam_name); }
+    if (test.test_type) { peerQuery += ` AND r.test_type = $${paramCount++}`; queryParams.push(test.test_type); }
+
+    const peerResults = await db.query(peerQuery, queryParams);
+    const peers = peerResults.rows;
+
+    // 3. Calculate Leaderboard & Rank
+    // Sort all attempts by score descending, then accuracy descending
+    peers.sort((a, b) => b.score - a.score || b.accuracy - a.accuracy);
+    
+    const topRankers = peers.slice(0, 5).map(p => ({
+      name: p.user_name,
+      score: `${p.score}`,
+      avatarBg: "#06B6D4" // Randomize this if you want different colors
+    }));
+
+    const currentRank = peers.findIndex(p => p.id === test.id) + 1;
+    const totalStudents = peers.length;
+    const percentile = totalStudents > 1 
+      ? (((totalStudents - currentRank) / totalStudents) * 100).toFixed(2) + "%" 
+      : "100%";
+
+    // 4. Calculate Averages and Topper Stats
+    const topper = peers[0];
+    const avgScore = peers.reduce((acc, curr) => acc + parseFloat(curr.score), 0) / totalStudents;
+    const avgAccuracy = peers.reduce((acc, curr) => acc + parseFloat(curr.accuracy), 0) / totalStudents;
+    const avgCorrect = peers.reduce((acc, curr) => acc + (curr.correct_count || 0), 0) / totalStudents;
+    const avgWrong = peers.reduce((acc, curr) => acc + (curr.wrong_count || 0), 0) / totalStudents;
+    const avgTime = peers.reduce((acc, curr) => acc + (curr.time_taken || 0), 0) / totalStudents;
+
+    // Format time helper (seconds to MM:SS)
+    const formatTime = (seconds) => {
+      if (!seconds) return "N/A";
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    };
+
+    // 5. Generate Distribution Data (Bell Curve / Histogram)
+    // Group scores into buckets (e.g., -10 to 0, 0 to 10, 10 to 20...)
+    const buckets = {};
+    peers.forEach(p => {
+      // Grouping by increments of 10 for the chart
+      const bucket = Math.floor(p.score / 10) * 10; 
+      buckets[bucket] = (buckets[bucket] || 0) + 1;
+    });
+
+    const marksDistributionData = Object.keys(buckets)
+      .sort((a, b) => Number(a) - Number(b))
+      .map(marks => {
+        let label = null;
+        if (Number(marks) === Math.floor(avgScore / 10) * 10) label = `Average: ${avgScore.toFixed(1)}`;
+        if (Number(marks) === Math.floor(test.score / 10) * 10) label = `You are here: ${test.score}`;
+        
+        return {
+          marks: Number(marks),
+          students: buckets[marks],
+          ...(label && { label }) // Only attach label if it exists
+        };
+      });
+
+    // 6. Send everything to the frontend
+    res.status(200).json({
+      currentRank,
+      totalStudents,
+      percentile,
+      topRankers,
+      topperStats: {
+        score: topper.score,
+        accuracy: topper.accuracy,
+        correct: topper.correct_count || "N/A",
+        wrong: topper.wrong_count || "N/A",
+        time: formatTime(topper.time_taken)
+      },
+      averageStats: {
+        score: avgScore.toFixed(2),
+        accuracy: avgAccuracy.toFixed(2),
+        correct: avgCorrect.toFixed(1),
+        wrong: avgWrong.toFixed(1),
+        time: formatTime(avgTime)
+      },
+      marksDistributionData
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error generating analytics");
+  }
+});
+
+
 export default router;
