@@ -122,10 +122,26 @@ router.get("/peer-comparison/:subjectId/:userId", async (req, res) => {
   } catch (err) { res.status(500).send(err.message); }
 });
 
-router.get("/my-results/:userId", async (req, res) => {
+app.get("/my-results/:userId", async (req, res) => {
+  const { userId } = req.params;
   try {
-    res.json((await db.query(`SELECT tr.score, tr.accuracy, tr.created_at, s.name as subject_name FROM test_results tr LEFT JOIN subjects s ON tr.subject_id = s.id WHERE tr.user_id = $1 ORDER BY tr.created_at DESC`, [req.params.userId])).rows);
-  } catch (err) { res.status(500).send(err.message); }
+    const query = `
+      SELECT 
+        r.id, r.score, r.accuracy, r.created_at, r.exam_name, r.test_type,
+        s.name AS subject_name,
+        c.name AS chapter_name
+      FROM results r
+      LEFT JOIN subjects s ON r.subject_id = s.id
+      LEFT JOIN chapters c ON r.chapter_id = c.id
+      WHERE r.user_id = $1
+      ORDER BY r.created_at DESC;
+    `;
+    const result = await db.query(query, [userId]);
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error fetching history");
+  }
 });
 
 router.post("/save-incorrect", async (req, res) => {
