@@ -1,0 +1,11 @@
+question_id,question_text,option_a,option_b,option_c,option_d,correct_option
+,"If Poisson's ratio of a material is 0.5, then the elastic modulus for the material is",three times its shear modulus,four times its shear modulus,equal to its shear modulus,indeterminate,A
+,The modulus of elasticity for a material is 200 GN/m^2 and Poisson's ratio is 0.25. What is the modulus of rigidity?,80 GN/m^2,125 GN/m^2,250 GN/m^2,320 GN/m^2,B
+,"If the ratio G/E (G= Rigidity modulus, E= Young's modulus of elasticity) is 0.4, then what is the value of the Poisson ratio?",0.2,0.25,0.3,0.33,A
+,"A bar produces a lateral strain of magnitude -60x10^-5 when subjected to tensile stress of magnitude 300 MPa along the axial direction. What is the elastic modulus of the material, if the Poisson's ratio is 0.3?",100 GPa,150 GPa,200 GPa,400 GPa,C
+,"If a piece of material neither expands nor contracts in volume when subjected to stress, then the Poisson's ratio must be",Zero,0.25,0.33,0.5,D
+,"A copper rod 400 mm long is pulled in tension to a length of 401.2 mm by applying a tensile stress of 330 MPa. If the deformation is entirely elastic, the Young's modulus of copper is",110 GPa,110 MPa,11 GPa,11 MPa,A
+,"A tension member of square cross-section of side 10 mm and Young's modulus E is to be replaced by another member of square cross-section of same length but Young's modulus E/2. The side of the new square cross-section, required to maintain the same elongation under the same load, is nearly",14 mm,17 mm,8 mm,5 mm,C
+,"For a material following Hooke's law, the values of elastic and shear moduli are 3x10^5 MPa and 1.2x10^5 MPa respectively. The value for bulk modulus is",1.5x10^5 MPa,2x10^5 MPa,2.5x10^5 MPa,3x10^5 MPa,C
+,The modulus of rigidity of an elastic material is found to be 38.5% of the value of its Young's modulus. The Poisson's ratio μ of the material is nearly,0.28,0.3,0.33,0.35,A
+,A bar produces a lateral strain of magnitude 60x10^-5 m/m when subjected to a tensile stress of magnitude 300 MPa along the axial direction. What is the elastic modulus of the material if the Poisson's ratio is 0.3?,200 GPa,150 GPa,125 GPa,100 GPa,D

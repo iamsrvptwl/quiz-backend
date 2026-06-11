@@ -1,0 +1,4 @@
+chapter_id,question_text,option_a,option_b,option_c,option_d,correct_option
+1,Which type of gear is used to connect two intersecting shafts?,Spur gear,Helical gear,Bevel gear,Worm gear,C
+1,What is the ratio of the pitch circle diameter to the number of teeth called?,Circular pitch,Diametral pitch,Module,Clearance,C
+1,In a simple gear train, if the number of idler gears is odd, the motion of driven gear will be:,Same as driving gear,Opposite to driving gear,Perpendicular to driving gear,Independent,A
