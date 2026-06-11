@@ -80,16 +80,38 @@ router.post("/available-exam-references", async (req, res) => {
   } catch (err) { res.status(500).send("Database error: " + err.message); }
 });
 
-// --- ANALYTICS & RESULTS ---
-router.post("/save-result", async (req, res) => {
+app.post("/save-result", async (req, res) => {
+  const { 
+    user_id, 
+    subject_id, 
+    chapter_id, 
+    exam_name, 
+    test_type, 
+    score, 
+    accuracy, 
+    time_taken,
+    correct_count,
+    wrong_count
+  } = req.body;
+
   try {
-    await db.query(
-      "INSERT INTO test_results (user_id, subject_id, score, accuracy) VALUES ($1, $2, $3, $4)",
-      [req.body.user_id, req.body.subject_id, req.body.score, req.body.accuracy]
-    );
-    res.send("Score saved!");
-  } catch (err) { res.status(500).send(err.message); }
+    const query = `
+      INSERT INTO results (user_id, subject_id, chapter_id, exam_name, test_type, score, accuracy, time_taken, correct_count, wrong_count, created_at) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+      RETURNING id;
+    `;
+    const values = [user_id, subject_id, chapter_id || null, exam_name || null, test_type || 'Mixed', score, accuracy, time_taken, correct_count, wrong_count];
+    
+    const result = await db.query(query, values);
+    res.status(200).json({ success: true, test_id: result.rows[0].id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error saving result");
+  }
 });
+
+
+// --- ANALYTICS & RESULTS ---
 
 router.get("/peer-comparison/:subjectId/:userId", async (req, res) => {
   try {
