@@ -551,36 +551,49 @@ app.delete("/admin/delete-question/:id", async (req, res) => {
 });
 
 // --- RESULTS & HISTORY ---
+
+// 1. UPDATE: Save Result (Now includes test type, time, and specific counts)
 app.post("/save-result", async (req, res) => {
   try {
-    await db.query(
-      "INSERT INTO test_results (user_id, subject_id, score, accuracy) VALUES ($1, $2, $3, $4)",
-      [
-        req.body.user_id,
-        req.body.subject_id,
-        req.body.score,
-        req.body.accuracy,
-      ]
-    );
-    res.send("Score saved!");
+    const query = `
+      INSERT INTO test_results 
+      (user_id, subject_id, chapter_id, exam_name, test_type, score, accuracy, time_taken, correct_count, wrong_count) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING id;
+    `;
+    const values = [
+      req.body.user_id,
+      req.body.subject_id,
+      req.body.chapter_id || null,
+      req.body.exam_name || null,
+      req.body.test_type || 'Mixed',
+      req.body.score,
+      req.body.accuracy,
+      req.body.time_taken || 0,
+      req.body.correct_count || 0,
+      req.body.wrong_count || 0
+    ];
+    
+    const result = await db.query(query, values);
+    
+    // We must return the new test ID so the frontend can route to its specific analytics page
+    res.json({ success: true, test_id: result.rows[0].id });
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-// NEW: Peer Comparison Dashboard Route
+// 2. KEEPS: Peer Comparison (No changes needed here!)
 app.get("/peer-comparison/:subjectId/:userId", async (req, res) => {
   try {
     const { subjectId, userId } = req.params;
     
-    // Get the user's average score for the subject
     const userStats = await db.query(
       `SELECT AVG(score) as my_avg, AVG(accuracy) as my_accuracy 
        FROM test_results WHERE user_id = $1 AND subject_id = $2`,
       [userId, subjectId]
     );
 
-    // Get the global average for the subject
     const globalStats = await db.query(
       `SELECT AVG(score) as global_avg, AVG(accuracy) as global_accuracy 
        FROM test_results WHERE subject_id = $1`,
@@ -596,20 +609,129 @@ app.get("/peer-comparison/:subjectId/:userId", async (req, res) => {
   }
 });
 
+// 3. UPDATE: My Results (Now joins chapters and selects the new metadata)
 app.get("/my-results/:userId", async (req, res) => {
   try {
-    res.json(
-      (
-        await db.query(
-          `SELECT tr.score, tr.accuracy, tr.created_at, s.name as subject_name FROM test_results tr LEFT JOIN subjects s ON tr.subject_id = s.id WHERE tr.user_id = $1 ORDER BY tr.created_at DESC`,
-          [req.params.userId]
-        )
-      ).rows
-    );
+    const query = `
+      SELECT 
+        tr.id, tr.score, tr.accuracy, tr.created_at, tr.exam_name, tr.test_type,
+        s.name AS subject_name,
+        c.name AS chapter_name
+      FROM test_results tr
+      LEFT JOIN subjects s ON tr.subject_id = s.id
+      LEFT JOIN chapters c ON tr.chapter_id = c.id
+      WHERE tr.user_id = $1
+      ORDER BY tr.created_at DESC;
+    `;
+    const result = await db.query(query, [req.params.userId]);
+    res.json(result.rows);
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
+
+// 4. NEW: Specific Test Analytics Dashboard
+app.get("/test-analytics/:testId", async (req, res) => {
+  const { testId } = req.params;
+
+  try {
+    // A. Get the specific test
+    const targetTest = await db.query(`SELECT * FROM test_results WHERE id = $1`, [testId]);
+    if (targetTest.rows.length === 0) return res.status(404).send("Test not found");
+    const test = targetTest.rows[0];
+
+    // B. Fetch peers who took the exact same test config
+    let peerQuery = `SELECT tr.*, u.name as user_name FROM test_results tr JOIN users u ON tr.user_id = u.id WHERE tr.subject_id = $1`;
+    let queryParams = [test.subject_id];
+    let paramCount = 2;
+
+    if (test.chapter_id) { peerQuery += ` AND tr.chapter_id = $${paramCount++}`; queryParams.push(test.chapter_id); }
+    if (test.exam_name) { peerQuery += ` AND tr.exam_name = $${paramCount++}`; queryParams.push(test.exam_name); }
+    if (test.test_type) { peerQuery += ` AND tr.test_type = $${paramCount++}`; queryParams.push(test.test_type); }
+
+    const peerResults = await db.query(peerQuery, queryParams);
+    const peers = peerResults.rows;
+
+    // C. Calculate Rank & Leaderboard
+    peers.sort((a, b) => b.score - a.score || b.accuracy - a.accuracy);
+    
+    const topRankers = peers.slice(0, 5).map(p => ({
+      name: p.user_name,
+      score: `${p.score}`,
+      avatarBg: "#06B6D4" 
+    }));
+
+    const currentRank = peers.findIndex(p => p.id === test.id) + 1;
+    const totalStudents = peers.length;
+    const percentile = totalStudents > 1 
+      ? (((totalStudents - currentRank) / totalStudents) * 100).toFixed(2) + "%" 
+      : "100%";
+
+    // D. Calculate Averages
+    const topper = peers[0];
+    const avgScore = peers.reduce((acc, curr) => acc + parseFloat(curr.score), 0) / totalStudents;
+    const avgAccuracy = peers.reduce((acc, curr) => acc + parseFloat(curr.accuracy), 0) / totalStudents;
+    const avgCorrect = peers.reduce((acc, curr) => acc + (curr.correct_count || 0), 0) / totalStudents;
+    const avgWrong = peers.reduce((acc, curr) => acc + (curr.wrong_count || 0), 0) / totalStudents;
+    const avgTime = peers.reduce((acc, curr) => acc + (curr.time_taken || 0), 0) / totalStudents;
+
+    const formatTime = (seconds) => {
+      if (!seconds) return "N/A";
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    };
+
+    // E. Generate Distribution Curve Data
+    const buckets = {};
+    peers.forEach(p => {
+      const bucket = Math.floor(p.score / 10) * 10; 
+      buckets[bucket] = (buckets[bucket] || 0) + 1;
+    });
+
+    const marksDistributionData = Object.keys(buckets)
+      .sort((a, b) => Number(a) - Number(b))
+      .map(marks => {
+        let label = null;
+        if (Number(marks) === Math.floor(avgScore / 10) * 10) label = `Average: ${avgScore.toFixed(1)}`;
+        if (Number(marks) === Math.floor(test.score / 10) * 10) label = `You are here: ${test.score}`;
+        
+        return {
+          marks: Number(marks),
+          students: buckets[marks],
+          ...(label && { label })
+        };
+      });
+
+    // F. Send payload to frontend
+    res.status(200).json({
+      currentRank,
+      totalStudents,
+      percentile,
+      topRankers,
+      topperStats: {
+        score: topper.score,
+        accuracy: topper.accuracy,
+        correct: topper.correct_count || "N/A",
+        wrong: topper.wrong_count || "N/A",
+        time: formatTime(topper.time_taken)
+      },
+      averageStats: {
+        score: avgScore.toFixed(2),
+        accuracy: avgAccuracy.toFixed(2),
+        correct: avgCorrect.toFixed(1),
+        wrong: avgWrong.toFixed(1),
+        time: formatTime(avgTime)
+      },
+      marksDistributionData
+    });
+
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+
 
 app.post("/save-incorrect", async (req, res) => {
   try {
